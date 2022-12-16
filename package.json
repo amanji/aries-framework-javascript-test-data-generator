@@ -1,8 +1,13 @@
 {
+  "scripts": {
+    "build": "npx tsc --outDir ./build",
+    "start": "yarn build && node ./build/"
+  },
   "devDependencies": {
     "typescript": "^4.9.4"
   },
   "dependencies": {
-    "@aries-framework/core": "^0.2.5"
+    "@aries-framework/core": "0.2.4",
+    "@aries-framework/node": "0.2.4"
   }
 }
