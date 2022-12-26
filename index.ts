@@ -47,10 +47,23 @@ async function main() {
     await agent1.connections.returnWhenIsConnected(connection.id);
   }
 
+  /* Format the connections for In Memory Store */
+  const walletConnections = connections.reduce((acc, connection) => {
+    return {
+      ...acc,
+      [connection?.id]: {
+        id: connection?.id,
+        type: "ConnectionRecord",
+        value: { ...connection.toJSON(), _tags: undefined },
+        tags: connection.getTags(),
+      },
+    };
+  }, {});
+
   /* Log the connections for Agent 1 */
   agent1.config.logger.debug(
     `${agent1.config.label} Connections: ${JSON.stringify(
-      connections,
+      walletConnections,
       null,
       2
     )}`
