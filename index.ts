@@ -2,34 +2,48 @@ import {
   Agent,
   ConsoleLogger,
   HttpOutboundTransport,
+  InitConfig,
   LogLevel,
+  MediatorPickupStrategy,
+  WsOutboundTransport,
 } from "@aries-framework/core";
 import { agentDependencies, HttpInboundTransport } from "@aries-framework/node";
 
 async function main() {
-  const agent1 = await createAndInitializeAgent("Test Agent 1", 5050);
-  const agent2 = await createAndInitializeAgent("Test Agent 2", 5051);
+  const agent1 = await createAndInitializeAgent("Test Agent one", 5050);
+  const agent2 = await createAndInitializeAgent("Test Agent two", 5051);
 
-  /* Generate connections */
-  const oobRecord = await agent1.oob.createInvitation({
-    autoAcceptConnection: true,
-  });
-
-  const { connectionRecord: connection } = await agent2.oob.receiveInvitation(
-    oobRecord.outOfBandInvitation,
-    {
-      autoAcceptConnection: true,
-    }
+  const oobRecords = await Promise.all(
+    Array(4)
+      .fill(null)
+      .map(() =>
+        agent1.oob.createInvitation({
+          autoAcceptConnection: true,
+        })
+      )
   );
 
-  if (connection?.id) {
-    /* Only available in AFJ 0.2.5 onward */
-    // await agent2.connections.addConnectionType(connection?.id, `test-agent-1-test-agent-2-connection-1`)
-    await agent2.connections.returnWhenIsConnected(connection?.id);
+  const connectionRecords = await Promise.all(
+    oobRecords.map((oobRecord) =>
+      agent2.oob.receiveInvitation(oobRecord.outOfBandInvitation, {
+        autoAcceptConnection: true,
+      })
+    )
+  );
+
+  if (connectionRecords.every(({ connectionRecord }) => connectionRecord?.id)) {
+    await Promise.all(
+      connectionRecords.map(({ connectionRecord }) =>
+        agent2.connections.returnWhenIsConnected(connectionRecord?.id || "")
+      )
+    );
   }
 
   const connections = await agent1.connections.getAll();
   for (const connection of connections) {
+    connection.setTags({
+      connectionType: ["test-connection-type-1", "test-connection-type-2"],
+    });
     await agent1.connections.returnWhenIsConnected(connection.id);
   }
 
@@ -48,22 +62,33 @@ async function main() {
   process.exit();
 }
 
-async function createAndInitializeAgent(label: string, port: number) {
-  const agent = new Agent(
-    {
-      label,
-      endpoints: [`http://localhost:${port}`],
-      walletConfig: {
-        id: `${label.toLowerCase().replace(/\s/g, "-")}-walletId`,
-        key: `${label.toLowerCase().replace(/\s/g, "-")}-walletKey`,
-      },
-      logger: new ConsoleLogger(LogLevel.debug),
+async function createAndInitializeAgent(
+  label: string,
+  port?: number,
+  url?: string
+) {
+  const config = {
+    label,
+    endpoints: port ? [`http://localhost:${port}`] : undefined,
+    walletConfig: {
+      id: `${label.toLowerCase().replace(/\s/g, "-")}-walletId`,
+      key: `${label.toLowerCase().replace(/\s/g, "-")}-walletKey`,
     },
-    agentDependencies
-  );
+    logger: new ConsoleLogger(LogLevel.debug),
+  } as InitConfig;
 
-  agent.registerInboundTransport(new HttpInboundTransport({ port }));
+  if (url) {
+    config.mediatorConnectionsInvite = url;
+    config.mediatorPickupStrategy = MediatorPickupStrategy.Implicit;
+  }
+
+  const agent = new Agent(config, agentDependencies);
+
+  if (port) {
+    agent.registerInboundTransport(new HttpInboundTransport({ port }));
+  }
   agent.registerOutboundTransport(new HttpOutboundTransport());
+  agent.registerOutboundTransport(new WsOutboundTransport());
 
   await agent.initialize();
 
